@@ -1,0 +1,192 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum Role {
+  PROJECT_MANAGER
+  PMO_PORTFOLIO
+  RESEARCHER
+  ADMIN
+  VIEWER
+}
+
+enum ProjectRole {
+  OWNER
+  ASSESSOR
+  VIEWER
+}
+
+enum InputMode {
+  QUICK
+  PRECISE
+}
+
+enum Dimension {
+  MANAGERIAL
+  AGILITY
+  SPATIAL_GOVERNANCE
+}
+
+enum IndicatorCode {
+  SPI
+  CPI
+  SC
+  VS
+  CR
+  FIR
+  ACC
+  XAI
+  PDP
+  OGC
+}
+
+enum AssessmentStatus {
+  DRAFT
+  COMPLETED
+}
+
+enum ClassificationBand {
+  VERY_LOW
+  LOW
+  MODERATE
+  HIGH
+  VERY_HIGH
+}
+
+model User {
+  id           String   @id @default(cuid())
+  name         String
+  email        String   @unique
+  passwordHash String
+  role         Role
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  ownedProjects     Project[]           @relation("ProjectOwner")
+  assignments       ProjectAssignment[]
+  assessments       Assessment[]
+  weightConfigsMade WeightConfig[]
+  auditLogs         AuditLog[]
+}
+
+model Project {
+  id        String   @id @default(cuid())
+  name      String
+  region    String
+  ownerId   String
+  owner     User     @relation("ProjectOwner", fields: [ownerId], references: [id])
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  assignments ProjectAssignment[]
+  assessments Assessment[]
+}
+
+model ProjectAssignment {
+  id        String      @id @default(cuid())
+  projectId String
+  project   Project     @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  userId    String
+  user      User        @relation(fields: [userId], references: [id], onDelete: Cascade)
+  role      ProjectRole
+  createdAt DateTime    @default(now())
+
+  @@unique([projectId, userId])
+}
+
+model WeightConfig {
+  id                String   @id @default(cuid())
+  name              String
+  source            String // "default" | "ahp" | "entropy" | "delphi" | "manual"
+  dimensionWeights  Json // { m: number, k: number, s: number }
+  indicatorWeights  Json // { SPI, CPI, SC, VS, CR, FIR, ACC, XAI, PDP, OGC }
+  pdpSubItemWeights Json // { lawfulBasis, purposeLimitation, minimization, retention, dpia, dataSubjectRights, breachNotification }
+  active            Boolean  @default(false)
+  createdById       String
+  createdBy         User     @relation(fields: [createdById], references: [id])
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  assessments Assessment[]
+  results     SPPIResult[]
+}
+
+model Assessment {
+  id             String           @id @default(cuid())
+  projectId      String
+  project        Project          @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  assessorId     String
+  assessor       User             @relation(fields: [assessorId], references: [id])
+  weightConfigId String
+  weightConfig   WeightConfig     @relation(fields: [weightConfigId], references: [id])
+  status         AssessmentStatus @default(DRAFT)
+  cycleLabel     String // e.g. "2026-Q1", used to order assessments for trend
+  createdAt      DateTime         @default(now())
+  updatedAt      DateTime         @updatedAt
+
+  indicatorScores IndicatorScore[]
+  result          SPPIResult?
+}
+
+model IndicatorScore {
+  id                String        @id @default(cuid())
+  assessmentId      String
+  assessment        Assessment    @relation(fields: [assessmentId], references: [id], onDelete: Cascade)
+  indicatorCode     IndicatorCode
+  dimension         Dimension
+  inputMode         InputMode
+  rubricLevel       Int? // 1..5, Quick mode
+  rawValues         Json? // Precise mode raw inputs, indicator-specific shape
+  normalizedValue   Float // always computed server-side, [0,1]
+  justificationNote String?
+  createdAt         DateTime      @default(now())
+  updatedAt         DateTime      @updatedAt
+
+  subItems SubItemScore[]
+
+  @@unique([assessmentId, indicatorCode])
+}
+
+model SubItemScore {
+  id               String         @id @default(cuid())
+  indicatorScoreId String
+  indicatorScore   IndicatorScore @relation(fields: [indicatorScoreId], references: [id], onDelete: Cascade)
+  itemCode         String
+  score            Float // 0, 0.5, or 1
+
+  @@unique([indicatorScoreId, itemCode])
+}
+
+model SPPIResult {
+  id                 String             @id @default(cuid())
+  assessmentId       String             @unique
+  assessment         Assessment         @relation(fields: [assessmentId], references: [id], onDelete: Cascade)
+  weightConfigId     String
+  weightConfig       WeightConfig       @relation(fields: [weightConfigId], references: [id])
+  dScoreM            Float
+  dScoreK            Float
+  dScoreS            Float
+  sppiScore          Float
+  classificationBand ClassificationBand
+  weakestIndicator   IndicatorCode
+  recommendedAction  String
+  sensitivityLow     Float?
+  sensitivityHigh    Float?
+  computedAt         DateTime           @default(now())
+}
+
+model AuditLog {
+  id         String   @id @default(cuid())
+  actorId    String
+  actor      User     @relation(fields: [actorId], references: [id])
+  action     String
+  targetType String
+  targetId   String
+  metadata   Json?
+  createdAt  DateTime @default(now())
+}

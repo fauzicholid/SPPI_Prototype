@@ -1,0 +1,26 @@
+"use client";
+
+import { useState } from "react";
+import { useRouter } from "next/navigation";
+
+export function ActivateButton({ configId }: { configId: string }) {
+  const router = useRouter();
+  const [loading, setLoading] = useState(false);
+
+  async function handleClick() {
+    setLoading(true);
+    await fetch(`/api/weight-configs/${configId}/activate`, { method: "POST" });
+    setLoading(false);
+    router.refresh();
+  }
+
+  return (
+    <button
+      onClick={handleClick}
+      disabled={loading}
+      className="rounded border border-slate-300 px-3 py-1.5 text-xs font-medium text-slate-700 hover:bg-slate-50 disabled:opacity-50"
+    >
+      {loading ? "Activating…" : "Activate"}
+    </button>
+  );
+}
